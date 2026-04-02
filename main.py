@@ -821,7 +821,7 @@ class Application:
 
             # Plot the aligned circle # Create circle at hip
             #self.ax_3d.plot(c_xs, c_ys, c_zs, color='lime', linewidth=2, alpha=0.8)
-            print("Testing")
+            print("Testing1")
 
             # Add center dot for confirmation # Create circle dot at hip
             #self.ax_3d.scatter([mid_hip[0]], [mid_hip[2]], [-mid_hip[1]], color='lime', s=30)
