@@ -113,8 +113,8 @@ class Application:
         self.view_elev = 10
         self.ELEVATION_STEP = 10
         self.side_view_angles = [-90, 180, 90, 0]
-        self.current_side_view_index = 0
-        self.view_azim = -90
+        self.current_side_view_index = 3
+        self.view_azim = 0
 
         # Processing State
         self.lock = threading.Lock()
@@ -672,25 +672,28 @@ class Application:
             mid_shoulder = (frame_p3ds_centered[11] + frame_p3ds_centered[12]) / 2
             mid_hip = (frame_p3ds_centered[23] + frame_p3ds_centered[24]) / 2
 
-            # Spine 2: Midpoint between shoulder and hip
+            # Temporarily stack to use the rectification function
+            temp_kpts = np.vstack([frame_p3ds_centered, mid_shoulder, mid_hip])
+            rectified_kpts = self.rectify_skeleton(temp_kpts)
+
+            # Re-extract the straightened mid-points
+            mid_shoulder = rectified_kpts[33]
+            mid_hip = rectified_kpts[34]
+            core_kpts = rectified_kpts[:33]
+
+            # Now generate the rest of the spine based on the 'straight' points
             spine_2 = (mid_shoulder + mid_hip) / 2
-            # Spine 1: Midpoint between shoulder and spine 2
             spine_1 = (mid_shoulder + spine_2) / 2
-            # Spine 4: Midpoint between spine 2 and hip
             spine_4 = (spine_2 + mid_hip) / 2
-            # Spine 3: Midpoint between spine 2 and spine 4
             spine_3 = (spine_2 + spine_4) / 2
-            # Spine 5: Midpoint between spine 4 and hip
             spine_5 = (spine_4 + mid_hip) / 2
 
-            # Index Map for Reference
-            # Stack them in order: 33=Mid_Sh, 34=Mid_Hip, 35=Spine1, 36=Spine2, 37=Spine3, 38=Spine4, 39=Spine5
             if self.spine_mode == 7:
                 spine_stack = [mid_shoulder, mid_hip, spine_1, spine_2, spine_3, spine_4, spine_5]
             else:
                 spine_stack = [mid_shoulder, mid_hip, spine_1, spine_2, spine_3, spine_4]
 
-            frame_p3ds_final = np.vstack([frame_p3ds_centered] + spine_stack)
+            frame_p3ds_final = np.vstack([core_kpts] + spine_stack)
             self.all_kpts_3d.append(frame_p3ds_final)
 
             # --- Print Keypoint Coordinates to PyCharm Console ---
@@ -863,6 +866,41 @@ class Application:
             self.ax_3d.set_xlim(mid_x - max_range, mid_x + max_range)
             self.ax_3d.set_ylim(mid_y - max_range, mid_y + max_range)
             self.ax_3d.set_zlim(mid_z - max_range, mid_z + max_range)
+
+    def rectify_skeleton(self, kpts):
+        """Aligns the skeleton so the trunk (mid-hip to mid-shoulder) is vertical."""
+        if len(kpts) < 35: return kpts
+
+        # 1. Get the current 'Up' vector of the body
+        mid_shoulder = kpts[33]
+        mid_hip = kpts[34]
+        trunk_vec = mid_shoulder - mid_hip
+
+        norm = np.linalg.norm(trunk_vec)
+        if norm < 1e-6: return kpts
+        unit_trunk = trunk_vec / norm
+
+        # 2. Define our target 'Up' vector
+        # In your plotting logic (zs = -kpts[:, 1]), the 'Up' in data space is [0, -1, 0]
+        target_up = np.array([0, -1, 0])
+
+        # 3. Calculate rotation matrix between unit_trunk and target_up
+        v = np.cross(unit_trunk, target_up)
+        s = np.linalg.norm(v)
+        c = np.dot(unit_trunk, target_up)
+
+        if s < 1e-6:  # Already aligned
+            return kpts
+
+        v_skew = np.array([[0, -v[2], v[1]],
+                           [v[2], 0, -v[0]],
+                           [-v[1], v[0], 0]])
+
+        # Rodrigues' rotation formula
+        R = np.eye(3) + v_skew + (v_skew @ v_skew) * ((1 - c) / (s ** 2))
+
+        # 4. Apply rotation to all points
+        return (R @ kpts.T).T
 
     def display_2d_frame(self, frame, result, label, index, cam_id):
         frame_vis = frame.copy()
@@ -1236,7 +1274,9 @@ class Application:
 
     def reset_3d_view(self):
         self.view_elev = 10
-        self.view_azim = -90
+        # --- MODIFIED: Default front view azimuth ---
+        self.view_azim = 0  # 0 is looking along the depth axis (Front for current mapping)
+        # ---------------------------------------------
         self.ax_3d.view_init(elev=self.view_elev, azim=self.view_azim)
         self.canvas_3d.draw()
 
