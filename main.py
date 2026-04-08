@@ -669,8 +669,31 @@ class Application:
                     yolo_results = yolo_model(frames[i], verbose=False)[0]
                     img_draw = frames[i].copy()
 
+                    #1. Defines the Bones
+                    skeleton_map = [
+                        (0, 1), (0, 2),  # Nose to Eyes
+                        (1, 3), (2, 4),  # Eyes to Ears
+                        (5, 6),  # Shoulder to Shoulder
+                        (5, 7), (7, 9),  # Left Arm (Shoulder-Elbow-Wrist)
+                        (6, 8), (8, 10),  # Right Arm
+                        (5, 11), (6, 12),  # Torso (Shoulder to Hip)
+                        (11, 12),  # Hip to Hip
+                        (11, 13), (13, 15),  # Left Leg (Hip-Knee-Ankle)
+                        (12, 14), (14, 16)  # Right Leg
+                    ]
+
                     if yolo_results.keypoints is not None and len(yolo_results.keypoints.data) > 0:
                         points = yolo_results.keypoints.data[0].cpu().numpy()
+
+                        #2. Draw the Bones
+                        for p1, p2 in skeleton_map:
+                            # Only draw if both joints are detected with confidence > 0.5
+                            if points[p1][2] > 0.5 and points[p2][2] > 0.5:
+                                pt1 = (int(points[p1][0]), int(points[p1][1]))
+                                pt2 = (int(points[p2][0]), int(points[p2][1]))
+                                cv2.line(img_draw, pt1, pt2, (255, 0, 0), 2)  # Blue lines
+
+                        #3. Draw the Dots
                         for kp in points:
                             px, py, conf = kp
                             if conf > 0.5:
