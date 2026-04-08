@@ -545,6 +545,16 @@ class Application:
             tk.messagebox.showwarning('No Input', 'Please upload at least 1 video.')
             return
 
+        #1.Select AI Scanning Model
+        ai_options = ["Mediapipe", "YOLO", "Net", "Other", "Other"]
+        ai_dialog= OptionDialog(self.master,ai_options, prompt="Select AI Model for Joint Scanning")
+        self.master.wait_window(ai_dialog)
+
+        ai_selection=ai_dialog.selected_option.get()
+        if not ai_selection:return
+
+        self.selected_ai=ai_selection
+
         # 2. Selection for Spine Keypoints
         dialog = OptionDialog(self.master, ["6 keypoints", "7 keypoints"],
                                   prompt="Select the number of spine keypoints to use")
