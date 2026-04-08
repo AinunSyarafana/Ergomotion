@@ -545,8 +545,8 @@ class Application:
             tk.messagebox.showwarning('No Input', 'Please upload at least 1 video.')
             return
 
-        #1.Select AI Scanning Model
-        ai_options = ["MediaPipe", "YOLO", "Net", "Other", "Other"]
+        #1. Select AI Scanning Model
+        ai_options = ["MediaPipe", "YOLO", "MoveNet", "SAM 3D", "ViTPose"]
         ai_dialog= OptionDialog(self.master,ai_options, prompt="Select AI Model for Joint Scanning")
         self.master.wait_window(ai_dialog)
 
