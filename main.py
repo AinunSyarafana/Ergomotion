@@ -848,51 +848,6 @@ class Application:
                 if not np.all(kpts[p1] == -1) and not np.all(kpts[p2] == -1):
                     self.ax_3d.plot([xs[p1], xs[p2]], [ys[p1], ys[p2]], [zs[p1], zs[p2]], linewidth=2, c='#FF4444')
 
-        # 2. Draw the Pelvis Circle (Aligned to Hip Orientation)
-        if len(kpts) > 34:
-            l_hip = kpts[23]
-            r_hip = kpts[24]
-            mid_hip = kpts[34]
-
-            # Vector from Left Hip to Right Hip
-            hip_vector = r_hip - l_hip
-            radius = np.linalg.norm(hip_vector) / 2
-
-            # Normalizing the hip vector to find direction
-            hip_dir = hip_vector / np.linalg.norm(hip_vector)
-
-            # Generate base circle points on a flat plane (XY)
-            theta = np.linspace(0, 2 * np.pi, 50)
-            # Base circle in 3D (lying on XY plane before rotation)
-            circle_base = np.array([radius * np.cos(theta), radius * np.sin(theta), np.zeros_like(theta)])
-
-            # Rotation Logic: Align base 'X' axis with our 'hip_dir'
-            # We calculate the angle of the hip line in the XZ plane
-            angle = np.arctan2(hip_dir[2], hip_dir[0])
-
-            # Simple rotation matrix around the Vertical (Y) axis
-            # This ensures the circle's "diameter" always stays locked to the hip joints
-            rotation_matrix = np.array([
-                [np.cos(angle),  0, np.sin(angle)],
-                [0,              1, 0],
-                [-np.sin(angle), 0, np.cos(angle)]
-            ])
-
-            # Apply rotation to the circle points
-            rotated_circle = rotation_matrix @ circle_base
-
-            # Map to Matplotlib axes (xs=X, ys=Z, zs=-Y) and translate to Mid_Hip
-            c_xs = rotated_circle[0, :] + mid_hip[0]
-            c_ys = rotated_circle[2, :] + mid_hip[2]
-            c_zs = -rotated_circle[1, :] - mid_hip[1]
-
-            # Plot the aligned circle # Create circle at hip
-            #self.ax_3d.plot(c_xs, c_ys, c_zs, color='lime', linewidth=2, alpha=0.8)
-            print("Testing2")
-
-            # Add center dot for confirmation # Create circle dot at hip
-            #self.ax_3d.scatter([mid_hip[0]], [mid_hip[2]], [-mid_hip[1]], color='lime', s=30)
-
         # 2. Draw Spine Specific Visualization
         if self.show_spine_dots.get() and len(kpts) > 33:
             # Draw black dots for indices 33 to 38
