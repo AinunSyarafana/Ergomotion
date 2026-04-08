@@ -546,7 +546,7 @@ class Application:
             return
 
         #1.Select AI Scanning Model
-        ai_options = ["Mediapipe", "YOLO", "Net", "Other", "Other"]
+        ai_options = ["MediaPipe", "YOLO", "Net", "Other", "Other"]
         ai_dialog= OptionDialog(self.master,ai_options, prompt="Select AI Model for Joint Scanning")
         self.master.wait_window(ai_dialog)
 
@@ -619,6 +619,12 @@ class Application:
         caps = [info[1] for info in cam_info]
         self.fps = caps[0].get(cv2.CAP_PROP_FPS) or 30
 
+        # ---AI Model Initialization
+        yolo_model = None
+        if self.selected_ai == "YOLO":
+            from ultralytics import YOLO
+            yolo_model = YOLO('yolov8n-pose.pt')
+
         use_single_cam_world3d = False
         if len(cam_info) == 1:
             dialog = OptionDialog(self.master, ["2D only (Z=0)", "MediaPipe World 3D"], prompt="Single Video Mode:")
@@ -641,6 +647,7 @@ class Application:
         last_good_kpts = None
         index = 0
 
+        # ---Main Processing Loop---
         while self.is_processing:
             rets, frames = zip(*[cap.read() for cap in caps])
             if not all(rets): break
@@ -649,10 +656,34 @@ class Application:
             results = {}
 
             for i, (cam_id, _, label) in enumerate(cam_info):
-                result = poses[cam_id].process(cv2.cvtColor(frames[i], cv2.COLOR_BGR2RGB))
-                results[cam_id] = result
-                current_frame_2d_kpts.append(self.extract_keypoints(result, frames[i].shape))
-                self.display_2d_frame(frames[i], result, label, index, cam_id)
+
+                # Option 1: MediaPipe Scanning
+                if self.selected_ai == "MediaPipe":
+                    result = poses[cam_id].process(cv2.cvtColor(frames[i], cv2.COLOR_BGR2RGB))
+                    results[cam_id] = result
+                    current_frame_2d_kpts.append(self.extract_keypoints(result, frames[i].shape))
+                    self.display_2d_frame(frames[i], result, label, index, cam_id)
+
+                # Option 2: YOLO Scanning
+                elif self.selected_ai == "YOLO":
+                    yolo_results = yolo_model(frames[i], verbose=False)[0]
+                    img_draw = frames[i].copy()
+
+                    if yolo_results.keypoints is not None and len(yolo_results.keypoints.data) > 0:
+                        points = yolo_results.keypoints.data[0].cpu().numpy()
+                        for kp in points:
+                            px, py, conf = kp
+                            if conf > 0.5:
+                                cv2.circle(img_draw, (int(px), int(py)), 5, (0, 255, 0), -1)
+
+                    self.display_2d_frame(img_draw, None, label, index, cam_id)
+
+            #If using YOLO, skip 3D calculation code below for now
+            if self.selected_ai == "YOLO":
+                index += 1
+                if not is_live and self.max_frames > 0:
+                    self.progress_var.set((index / self.max_frames) * 100)
+                continue
 
             if len(cam_info) >= 2:
                 frame_p3ds = self.triangulate_points(P_list, current_frame_2d_kpts)
