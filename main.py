@@ -445,7 +445,7 @@ class Application:
         if not filepath or not os.path.exists(filepath): return
 
         prompt = f"Assign '{os.path.basename(filepath)}' to which view?"
-        dialog = OptionDialog(self.master, ["Cam0", "Cam1", "Cam2"], prompt=prompt)
+        dialog = OptionDialog(self.master, ["Cam0 (Side)", "Cam1 (Front)", "Cam2"], prompt=prompt)
         self.master.wait_window(dialog)
         input_source = dialog.selected_option.get()
         if not input_source: return
@@ -455,7 +455,11 @@ class Application:
             tk.messagebox.showerror("Error", f"Failed to open video file: {filepath}")
             return
 
-        cam_id = int(input_source.replace("Cam", ""))
+        # Strip the descriptive text to keep the logic working
+        cam_id_str = input_source.split(" ")[0].replace("Cam", "")
+        cam_id = int(cam_id_str)
+
+        #cam_id = int(input_source.replace("Cam", "")) #ORIGINAL DO NOT DELETE
         target_label = self.labels_2d[cam_id]
 
         if cam_id == 0:
@@ -503,7 +507,7 @@ class Application:
 
     def connect_usb_camera(self):
         self._reset_ui_for_new_video()
-        dialog = OptionDialog(self.master, ["Cam0", "Cam1", "Cam2"], prompt="Select View for USB Camera:")
+        dialog = OptionDialog(self.master, ["Cam0 (Side)", "Cam1 (Front)", "Cam2"], prompt="Select View for USB Camera:")
         self.master.wait_window(dialog)
         input_source = dialog.selected_option.get()
         if not input_source: return
@@ -516,7 +520,11 @@ class Application:
             tk.messagebox.showerror("Error", "Could not open camera.")
             return
 
-        cam_id = int(input_source.replace("Cam", ""))
+        # Strip the descriptive text to keep the logic working
+        cam_id_str = input_source.split(" ")[0].replace("Cam", "")
+        cam_id = int(cam_id_str)
+
+        #cam_id = int(input_source.replace("Cam", "")) # ORIGINAL DO NOT DELETE
         if cam_id == 0:
             self.cap0 = cap
         elif cam_id == 1:
@@ -842,18 +850,50 @@ class Application:
 
         self.ax_3d.view_init(elev=self.view_elev, azim=self.view_azim)
 
+        # --- Color Definitions ---
+        LEFT_COLOR = '#FF4444'  # Red
+        RIGHT_COLOR = '#44FF44'  # Green
+        MID_COLOR = '#FFFFFF'  # White for Spine/Head/Body Crosses
+
+        # MediaPipe Landmark Sets (Original MP Indices)
+        # Left: odd indices mostly (11, 13, 15, 23, 25, 27 etc.)
+        left_mp_indices = {1, 2, 3, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31}
+        # Right: even indices mostly (12, 14, 16, 24, 26, 28 etc.)
+        right_mp_indices = {4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32}
+
         # 1. Draw Skeleton Lines
+
+        # ORIGINAL DO NOT DELETE
+        """for p1, p2 in skeleton_connections:
+            if p1 < len(kpts) and p2 < len(kpts):
+                if not np.all(kpts[p1] == -1) and not np.all(kpts[p2] == -1):
+                    self.ax_3d.plot([xs[p1], xs[p2]], [ys[p1], ys[p2]], [zs[p1], zs[p2]], linewidth=2, c='#FF4444')"""
         for p1, p2 in skeleton_connections:
             if p1 < len(kpts) and p2 < len(kpts):
                 if not np.all(kpts[p1] == -1) and not np.all(kpts[p2] == -1):
-                    self.ax_3d.plot([xs[p1], xs[p2]], [ys[p1], ys[p2]], [zs[p1], zs[p2]], linewidth=2, c='#FF4444')
+                    # Determine MP index to find the side
+                    # Indices 0-32 map to pose_keypoints, 33+ are spine midpoints
+                    mp_p1 = pose_keypoints[p1] if p1 < 33 else None
+                    mp_p2 = pose_keypoints[p2] if p2 < 33 else None
+
+                    # Selection Logic
+                    if mp_p1 in left_mp_indices and mp_p2 in left_mp_indices:
+                        line_c = LEFT_COLOR
+                    elif mp_p1 in right_mp_indices and mp_p2 in right_mp_indices:
+                        line_c = RIGHT_COLOR
+                    else:
+                        # This catches the Spine, Shoulder-to-Shoulder, and Head midlines
+                        line_c = MID_COLOR
+
+                    self.ax_3d.plot([xs[p1], xs[p2]], [ys[p1], ys[p2]], [zs[p1], zs[p2]],
+                                    linewidth=2, c=line_c)
 
         # 2. Draw Spine Specific Visualization
         if self.show_spine_dots.get() and len(kpts) > 33:
             # Draw black dots for indices 33 to 38
             self.ax_3d.scatter(xs[33:39], ys[33:39], zs[33:39], color='black', s=10)
 
-        #
+        # 3. Show Spine Labels
         if self.show_spine_labels.get() and len(kpts) > 33:
             spine_names = {
                     33: "MID_SHOULDER", 34: "MID_HIP",
