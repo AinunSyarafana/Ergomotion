@@ -675,46 +675,20 @@ class Application:
                 # Option 2: YOLO Scanning
                 elif self.selected_ai == "YOLO":
                     yolo_results = yolo_model(frames[i], verbose=False)[0]
-                    img_draw = frames[i].copy()
 
-                    #1. Defines the Bones
-                    skeleton_map = [
-                        (0, 1), (0, 2),  # Nose to Eyes
-                        (1, 3), (2, 4),  # Eyes to Ears
-                        (5, 6),  # Shoulder to Shoulder
-                        (5, 7), (7, 9),  # Left Arm (Shoulder-Elbow-Wrist)
-                        (6, 8), (8, 10),  # Right Arm
-                        (5, 11), (6, 12),  # Torso (Shoulder to Hip)
-                        (11, 12),  # Hip to Hip
-                        (11, 13), (13, 15),  # Left Leg (Hip-Knee-Ankle)
-                        (12, 14), (14, 16)  # Right Leg
-                    ]
-
+                    yolo_pts = None
                     if yolo_results.keypoints is not None and len(yolo_results.keypoints.data) > 0:
-                        points = yolo_results.keypoints.data[0].cpu().numpy()
+                        yolo_pts = yolo_results.keypoints.data[0].cpu().numpy()
+                        current_frame_2d_kpts.append(yolo_pts[:, :2])
 
-                        #2. Draw the Bones
-                        for p1, p2 in skeleton_map:
-                            # Only draw if both joints are detected with confidence > 0.5
-                            if points[p1][2] > 0.5 and points[p2][2] > 0.5:
-                                pt1 = (int(points[p1][0]), int(points[p1][1]))
-                                pt2 = (int(points[p2][0]), int(points[p2][1]))
-                                cv2.line(img_draw, pt1, pt2, (255, 0, 0), 2)  # Blue lines
-
-                        #3. Draw the Dots
-                        for kp in points:
-                            px, py, conf = kp
-                            if conf > 0.5:
-                                cv2.circle(img_draw, (int(px), int(py)), 5, (0, 255, 0), -1)
-
-                    self.display_2d_frame(img_draw, None, label, index, cam_id)
+                    self.display_2d_frame(frames[i], None, label, index, cam_id, yolo_points = yolo_pts)
 
             #If using YOLO, skip 3D calculation code below for now
-            if self.selected_ai == "YOLO":
-                index += 1
-                if not is_live and self.max_frames > 0:
+            #if self.selected_ai == "YOLO":
+            #    index += 1
+            if not is_live and self.max_frames > 0:
                     self.progress_var.set((index / self.max_frames) * 100)
-                continue
+            #    continue
 
             if len(cam_info) >= 2:
                 frame_p3ds = self.triangulate_points(P_list, current_frame_2d_kpts)
@@ -740,7 +714,6 @@ class Application:
             frame_p3ds_centered = frame_p3ds - np.mean(valid_kpts, axis=0) if len(valid_kpts) > 0 else frame_p3ds
 
             # --- CALCULATE MIDPOINTS & SPINE ---
-            # Index 11=L_Shoulder, 12=R_Shoulder | 23=L_Hip, 24=R_Hip
             mid_shoulder = (frame_p3ds_centered[11] + frame_p3ds_centered[12]) / 2
             mid_hip = (frame_p3ds_centered[23] + frame_p3ds_centered[24]) / 2
 
@@ -961,12 +934,13 @@ class Application:
         # 4. Apply rotation to all points
         return (R @ kpts.T).T
 
-    def display_2d_frame(self, frame, result, label, index, cam_id):
+    def display_2d_frame(self, frame, result, label, index, cam_id, yolo_points = None):
         frame_vis = frame.copy()
-        if result and result.pose_landmarks:
-            mp_drawing.draw_landmarks(frame_vis, result.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+        h, w = frame_vis.shape[:2]
 
-            h, w = frame_vis.shape[:2]
+        # --- Option 1: Mediapipe Visualization ---
+        if self.selected_ai == "MediaPipe" and result and result.pose_landmarks:
+            mp_drawing.draw_landmarks(frame_vis, result.pose_landmarks, mp_pose.POSE_CONNECTIONS)
             lm = result.pose_landmarks.landmark
 
             # --- DYNAMIC 2D SPINE CALCULATION ---
@@ -1021,6 +995,29 @@ class Application:
                         px, py = int(pt[0] * w), int(pt[1] * h)
                         cv2.putText(frame_vis, spine_labels[i], (px + 8, py + 8),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
+
+        # --- Option 2: Yolo Visualization ---
+        elif self.selected_ai == "YOLO" and yolo_points is not None:
+            # Defines Yolo bones (COCO Keypoints)
+            skeleton_map = [
+                (0, 1), (0, 2), (1, 3), (2, 4), (5, 6), (5, 7), (7, 9), (6, 8),
+                (8, 10), (5, 11), (6, 12), (11, 12), (11, 13), (13, 15), (12, 14), (14, 16)
+            ]
+
+            # Draw Yolo Bones
+            for p1, p2 in skeleton_map:
+                if p1 < len(yolo_points) and p2 < len(yolo_points):
+                    if yolo_points[p1][2] > 0.5 and yolo_points[p2][2] > 0.5:
+                        pt1 = (int(yolo_points[p1][0]), int(yolo_points[p1][1]))
+                        pt2 = (int(yolo_points[p2][0]), int(yolo_points[p2][1]))
+                        cv2.line(frame_vis, pt1, pt2, (255, 0, 0), 2)
+
+            # Draw Yolo Joints
+            for kp in yolo_points:
+                px, py, conf = kp
+                if conf > 0.5:
+                    cv2.circle(frame_vis, (int(px), int(py)), 5, (0, 255, 0), -1)
+
 
         # Save and display logic remains the same
         path = f'./images/cam{cam_id}_frame{str(index).zfill(8)}.png'
