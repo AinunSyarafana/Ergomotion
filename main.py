@@ -613,9 +613,13 @@ class Application:
         return [[-1, -1]] * len(pose_keypoints)
 
     def triangulate_points(self, P_list, kpts_2d):
+        # Determine how many keypoints the AI model actually provided
+        # (17 for YOLO, 33 for MediaPipe)
+        num_kpts = len(kpts_2d[0])
+
         return np.array(
-            [DLT_multi(P_list, [cam_kpts[i] for cam_kpts in kpts_2d]) for i in range(len(pose_keypoints))]
-        ).reshape((len(pose_keypoints), 3))
+            [DLT_multi(P_list, [cam_kpts[i] for cam_kpts in kpts_2d]) for i in range(num_kpts)]
+        ).reshape((num_kpts, 3))
 
     def play_video(self):
         cam_info = []
@@ -655,6 +659,9 @@ class Application:
         last_good_kpts = None
         index = 0
 
+        # --- NEW: Variable to store the initial world alignment ---
+        saved_rotation_matrix = None
+
         # ---Main Processing Loop---
         while self.is_processing:
             rets, frames = zip(*[cap.read() for cap in caps])
@@ -675,11 +682,15 @@ class Application:
                 # Option 2: YOLO Scanning
                 elif self.selected_ai == "YOLO":
                     yolo_results = yolo_model(frames[i], verbose=False)[0]
-
                     yolo_pts = None
                     if yolo_results.keypoints is not None and len(yolo_results.keypoints.data) > 0:
                         yolo_pts = yolo_results.keypoints.data[0].cpu().numpy()
+                        # Extract just x, y for triangulation
                         current_frame_2d_kpts.append(yolo_pts[:, :2])
+                    else:
+                        # CRITICAL: If no person detected, append dummy points
+                        # to keep camera alignment consistent
+                        current_frame_2d_kpts.append(np.full((17, 2), -1.0))
 
                     self.display_2d_frame(frames[i], None, label, index, cam_id, yolo_points = yolo_pts)
 
@@ -687,7 +698,7 @@ class Application:
             #if self.selected_ai == "YOLO":
             #    index += 1
             if not is_live and self.max_frames > 0:
-                    self.progress_var.set((index / self.max_frames) * 100)
+                self.progress_var.set((index / self.max_frames) * 100)
             #    continue
 
             if len(cam_info) >= 2:
@@ -714,17 +725,57 @@ class Application:
             frame_p3ds_centered = frame_p3ds - np.mean(valid_kpts, axis=0) if len(valid_kpts) > 0 else frame_p3ds
 
             # --- CALCULATE MIDPOINTS & SPINE ---
-            mid_shoulder = (frame_p3ds_centered[11] + frame_p3ds_centered[12]) / 2
-            mid_hip = (frame_p3ds_centered[23] + frame_p3ds_centered[24]) / 2
+            # Index 11=L_Shoulder, 12=R_Shoulder | 23=L_Hip, 24=R_Hip
+            if self.selected_ai == "YOLO":
+                sh_l, sh_r, hp_l, hp_r = 5, 6, 11, 12
+            else:  # MediaPipe
+                sh_l, sh_r, hp_l, hp_r = 11, 12, 23, 24
+            mid_shoulder = (frame_p3ds_centered[sh_l] + frame_p3ds_centered[sh_r]) / 2
+            mid_hip = (frame_p3ds_centered[hp_l] + frame_p3ds_centered[hp_r]) / 2
 
-            # Temporarily stack to use the rectification function
+            # Temporarily stack the points
             temp_kpts = np.vstack([frame_p3ds_centered, mid_shoulder, mid_hip])
-            rectified_kpts = self.rectify_skeleton(temp_kpts)
 
-            # Re-extract the straightened mid-points
-            mid_shoulder = rectified_kpts[33]
-            mid_hip = rectified_kpts[34]
-            core_kpts = rectified_kpts[:33]
+            # --- NEW: STATIC RECTIFICATION ---
+            # Only calculate the rotation matrix on the FIRST valid frame
+            if saved_rotation_matrix is None:
+                trunk_vec = mid_shoulder - mid_hip
+                norm = np.linalg.norm(trunk_vec)
+
+                if norm > 1e-6:
+                    unit_trunk = trunk_vec / norm
+                    target_up = np.array([0, -1, 0])  # Force initial pose to face UP
+                    v = np.cross(unit_trunk, target_up)
+                    s = np.linalg.norm(v)
+                    c = np.dot(unit_trunk, target_up)
+
+                    if s > 1e-6:
+                        v_skew = np.array([[0, -v[2], v[1]],
+                                           [v[2], 0, -v[0]],
+                                           [-v[1], v[0], 0]])
+                        # Calculate and SAVE the matrix
+                        saved_rotation_matrix = np.eye(3) + v_skew + (v_skew @ v_skew) * ((1 - c) / (s ** 2))
+                    else:
+                        saved_rotation_matrix = np.eye(3)
+                else:
+                    saved_rotation_matrix = np.eye(3)
+
+            # Apply the SAVED matrix to the current frame
+            # If they bend, they will now bend relative to the fixed floor!
+            rectified_kpts = (saved_rotation_matrix @ temp_kpts.T).T
+
+            # Re-extract the straightened mid-points using negative indexing
+            # -2 is always the shoulder, -1 is always the hip (since we just stacked them there)
+            mid_shoulder = rectified_kpts[-2]
+            mid_hip = rectified_kpts[-1]
+            core_kpts = rectified_kpts[:-2]
+
+            # --- CRITICAL FIX FOR YOLO ---
+            # If the AI model (like YOLO) outputs fewer than 33 points,
+            # we must pad the array with -1s so REBA and 3D Drawing don't crash
+            if len(core_kpts) < 33:
+                padding = np.full((33 - len(core_kpts), 3), -1.0, dtype=np.float32)
+                core_kpts = np.vstack([core_kpts, padding])
 
             # Now generate the rest of the spine based on the 'straight' points
             spine_2 = (mid_shoulder + mid_hip) / 2
@@ -816,6 +867,16 @@ class Application:
         self.ax_3d.set_facecolor(bg_color)
         self.ax_3d.grid(color='lightgrey', linestyle='--', linewidth=0.5, alpha=0.3)
 
+        # --- ADD THE LEGEND HERE ---
+        # Create invisible lines just for the legend
+        self.ax_3d.plot([], [], [], color='#FF4444', linewidth=2, label='Left Side')
+        self.ax_3d.plot([], [], [], color='#44FF44', linewidth=2, label='Right Side')
+        self.ax_3d.plot([], [], [], color='#FFFFFF', linewidth=2, label='Midline')
+
+        # Display the legend in the upper left corner
+        self.ax_3d.legend(loc='upper left', facecolor=bg_color, edgecolor='gray', labelcolor='white', fontsize=8)
+        # ---------------------------
+
         # Mapping coordinates
         xs = kpts[:, 0]
         ys = kpts[:, 2]
@@ -835,12 +896,6 @@ class Application:
         right_mp_indices = {4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32}
 
         # 1. Draw Skeleton Lines
-
-        # ORIGINAL DO NOT DELETE
-        """for p1, p2 in skeleton_connections:
-            if p1 < len(kpts) and p2 < len(kpts):
-                if not np.all(kpts[p1] == -1) and not np.all(kpts[p2] == -1):
-                    self.ax_3d.plot([xs[p1], xs[p2]], [ys[p1], ys[p2]], [zs[p1], zs[p2]], linewidth=2, c='#FF4444')"""
         for p1, p2 in skeleton_connections:
             if p1 < len(kpts) and p2 < len(kpts):
                 if not np.all(kpts[p1] == -1) and not np.all(kpts[p2] == -1):
@@ -869,7 +924,7 @@ class Application:
         # 3. Show Spine Labels
         if self.show_spine_labels.get() and len(kpts) > 33:
             spine_names = {
-                    33: "MID_SHOULDER", 34: "MID_HIP",
+                33: "MID_SHOULDER", 34: "MID_HIP",
                 35: "SPINE_1", 36: "SPINE_2",
                 37: "SPINE_3", 38: "SPINE_4"
             }
@@ -899,45 +954,9 @@ class Application:
             self.ax_3d.set_ylim(mid_y - max_range, mid_y + max_range)
             self.ax_3d.set_zlim(mid_z - max_range, mid_z + max_range)
 
-    def rectify_skeleton(self, kpts):
-        """Aligns the skeleton so the trunk (mid-hip to mid-shoulder) is vertical."""
-        if len(kpts) < 35: return kpts
-
-        # 1. Get the current 'Up' vector of the body
-        mid_shoulder = kpts[33]
-        mid_hip = kpts[34]
-        trunk_vec = mid_shoulder - mid_hip
-
-        norm = np.linalg.norm(trunk_vec)
-        if norm < 1e-6: return kpts
-        unit_trunk = trunk_vec / norm
-
-        # 2. Define our target 'Up' vector
-        # In your plotting logic (zs = -kpts[:, 1]), the 'Up' in data space is [0, -1, 0]
-        target_up = np.array([0, -1, 0])
-
-        # 3. Calculate rotation matrix between unit_trunk and target_up
-        v = np.cross(unit_trunk, target_up)
-        s = np.linalg.norm(v)
-        c = np.dot(unit_trunk, target_up)
-
-        if s < 1e-6:  # Already aligned
-            return kpts
-
-        v_skew = np.array([[0, -v[2], v[1]],
-                           [v[2], 0, -v[0]],
-                           [-v[1], v[0], 0]])
-
-        # Rodrigues' rotation formula
-        R = np.eye(3) + v_skew + (v_skew @ v_skew) * ((1 - c) / (s ** 2))
-
-        # 4. Apply rotation to all points
-        return (R @ kpts.T).T
-
     def display_2d_frame(self, frame, result, label, index, cam_id, yolo_points = None):
         frame_vis = frame.copy()
         h, w = frame_vis.shape[:2]
-
         # --- Option 1: Mediapipe Visualization ---
         if self.selected_ai == "MediaPipe" and result and result.pose_landmarks:
             mp_drawing.draw_landmarks(frame_vis, result.pose_landmarks, mp_pose.POSE_CONNECTIONS)
@@ -1017,7 +1036,6 @@ class Application:
                 px, py, conf = kp
                 if conf > 0.5:
                     cv2.circle(frame_vis, (int(px), int(py)), 5, (0, 255, 0), -1)
-
 
         # Save and display logic remains the same
         path = f'./images/cam{cam_id}_frame{str(index).zfill(8)}.png'
