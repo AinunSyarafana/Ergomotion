@@ -681,19 +681,44 @@ class Application:
 
                 # Option 2: YOLO Scanning
                 elif self.selected_ai == "YOLO":
+                    # Run YOLOv8 pose inference
                     yolo_results = yolo_model(frames[i], verbose=False)[0]
                     yolo_pts = None
+
                     if yolo_results.keypoints is not None and len(yolo_results.keypoints.data) > 0:
+                        # Extract 17 standard COCO keypoints from YOLO
                         yolo_pts = yolo_results.keypoints.data[0].cpu().numpy()
-                        # Extract just x, y for triangulation
-                        current_frame_2d_kpts.append(yolo_pts[:, :2])
+
+                        # --- REMAPPING YOLO (17 pts) TO MEDIAPIPE FORMAT (33 pts) ---
+                        # This ensures the 3D skeleton and REBA logic receive points at the correct indices
+                        mapped_pts = np.full((33, 2), -1.0)
+
+                        # Map essential joints for 3D reconstruction and biomechanical analysis
+                        # Head/Face
+                        mapped_pts[0] = yolo_pts[0][:2]  # Nose
+                        # Upper Body
+                        mapped_pts[11] = yolo_pts[5][:2]  # L_Shoulder
+                        mapped_pts[12] = yolo_pts[6][:2]  # R_Shoulder
+                        mapped_pts[13] = yolo_pts[7][:2]  # L_Elbow
+                        mapped_pts[14] = yolo_pts[8][:2]  # R_Elbow
+                        mapped_pts[15] = yolo_pts[9][:2]  # L_Wrist
+                        mapped_pts[16] = yolo_pts[10][:2]  # R_Wrist
+                        # Lower Body
+                        mapped_pts[23] = yolo_pts[11][:2]  # L_Hip
+                        mapped_pts[24] = yolo_pts[12][:2]  # R_Hip
+                        mapped_pts[25] = yolo_pts[13][:2]  # L_Knee
+                        mapped_pts[26] = yolo_pts[14][:2]  # R_Knee
+                        mapped_pts[27] = yolo_pts[15][:2]  # L_Ankle
+                        mapped_pts[28] = yolo_pts[16][:2]  # R_Ankle
+
+                        # Append the remapped 33-point array for triangulation
+                        current_frame_2d_kpts.append(mapped_pts)
                     else:
-                        # CRITICAL: If no person detected, append dummy points
-                        # to keep camera alignment consistent
-                        current_frame_2d_kpts.append(np.full((17, 2), -1.0))
+                        # Append 33-point dummy array if no detection to maintain camera synchronization
+                        current_frame_2d_kpts.append(np.full((33, 2), -1.0))
 
-                    self.display_2d_frame(frames[i], None, label, index, cam_id, yolo_points = yolo_pts)
-
+                    # Pass the original yolo_pts to the 2D display function for visualization
+                    self.display_2d_frame(frames[i], None, label, index, cam_id, yolo_points=yolo_pts)
             #If using YOLO, skip 3D calculation code below for now
             #if self.selected_ai == "YOLO":
             #    index += 1
@@ -957,43 +982,22 @@ class Application:
     def display_2d_frame(self, frame, result, label, index, cam_id, yolo_points = None):
         frame_vis = frame.copy()
         h, w = frame_vis.shape[:2]
+        m_sh = None
+        m_hp = None
+
         # --- Option 1: Mediapipe Visualization ---
         if self.selected_ai == "MediaPipe" and result and result.pose_landmarks:
             mp_drawing.draw_landmarks(frame_vis, result.pose_landmarks, mp_pose.POSE_CONNECTIONS)
             lm = result.pose_landmarks.landmark
 
             # --- DYNAMIC 2D SPINE CALCULATION ---
-            l_sh = np.array([lm[11].x, lm[11].y])
-            r_sh = np.array([lm[12].x, lm[12].y])
-            l_hp = np.array([lm[23].x, lm[23].y])
-            r_hp = np.array([lm[24].x, lm[24].y])
+            l_sh = np.array([lm[11].x * w, lm[11].y * h])
+            r_sh = np.array([lm[12].x * w, lm[12].y * h])
+            l_hp = np.array([lm[23].x * w, lm[23].y * h])
+            r_hp = np.array([lm[24].x * w, lm[24].y * h])
 
             m_sh = (l_sh + r_sh) / 2
             m_hp = (l_hp + r_hp) / 2
-            s2 = (m_sh + m_hp) / 2
-            s1 = (m_sh + s2) / 2
-            s4 = (s2 + m_hp) / 2
-            s3 = (s2 + s4) / 2
-            s5 = (s4 + m_hp) / 2
-
-            # Define ordered list for the continuous spine line:
-            # MID_SH -> SPINE_1 -> SPINE_2 -> SPINE_3 -> SPINE_4 (-> SPINE_5) -> MID_HIP
-            spine_line_pts = [m_sh, s1, s2, s3, s4]
-            if self.spine_mode == 7:
-                spine_line_pts.append(s5)
-            spine_line_pts.append(m_hp)
-
-            # --- DRAW SPINE LINES ---
-            for i in range(len(spine_line_pts) - 1):
-                pt1 = (int(spine_line_pts[i][0] * w), int(spine_line_pts[i][1] * h))
-                pt2 = (int(spine_line_pts[i + 1][0] * w), int(spine_line_pts[i + 1][1] * h))
-                # Draw a red line to match your 3D skeleton style
-                cv2.line(frame_vis, pt1, pt2, (0, 0, 255), 2)
-
-                # --- DRAW SPINE DOTS ---
-            for pt in spine_line_pts:
-                px, py = int(pt[0] * w), int(pt[1] * h)
-                cv2.circle(frame_vis, (px, py), 4, (0, 255, 255), -1)
 
             # --- LABELS ---
             if self.show_joint_labels.get():
@@ -1004,44 +1008,76 @@ class Application:
                     cv2.putText(frame_vis, POSE_KEYPOINT_NAMES[idx_in_list], (cx + 5, cy - 5),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
 
-                # Spine Labels (if checkbox is on)
-                if self.show_spine_labels.get():
-                    spine_labels = ["MID_SH", "S1", "S2", "S3", "S4"]
-                    if self.spine_mode == 7: spine_labels.append("S5")
-                    spine_labels.append("MID_HIP")
-
-                    for i, pt in enumerate(spine_line_pts):
-                        px, py = int(pt[0] * w), int(pt[1] * h)
-                        cv2.putText(frame_vis, spine_labels[i], (px + 8, py + 8),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
-
-        # --- Option 2: Yolo Visualization ---
+        # --- Option 2: YOLO Visualization ---
         elif self.selected_ai == "YOLO" and yolo_points is not None:
-            # Defines Yolo bones (COCO Keypoints)
+            # Defines YOLO bones (COCO Keypoints)
             skeleton_map = [
                 (0, 1), (0, 2), (1, 3), (2, 4), (5, 6), (5, 7), (7, 9), (6, 8),
                 (8, 10), (5, 11), (6, 12), (11, 12), (11, 13), (13, 15), (12, 14), (14, 16)
             ]
 
-            # Draw Yolo Bones
+            # Draw YOLO Bones
             for p1, p2 in skeleton_map:
-                if p1 < len(yolo_points) and p2 < len(yolo_points):
-                    if yolo_points[p1][2] > 0.5 and yolo_points[p2][2] > 0.5:
-                        pt1 = (int(yolo_points[p1][0]), int(yolo_points[p1][1]))
-                        pt2 = (int(yolo_points[p2][0]), int(yolo_points[p2][1]))
-                        cv2.line(frame_vis, pt1, pt2, (255, 0, 0), 2)
+                if yolo_points[p1][2] > 0.5 and yolo_points[p2][2] > 0.5:
+                    pt1 = (int(yolo_points[p1][0]), int(yolo_points[p1][1]))
+                    pt2 = (int(yolo_points[p2][0]), int(yolo_points[p2][1]))
+                    cv2.line(frame_vis, pt1, pt2, (255, 0, 0), 2)
 
-            # Draw Yolo Joints
+            # Draw YOLO joint markers
             for kp in yolo_points:
-                px, py, conf = kp
-                if conf > 0.5:
-                    cv2.circle(frame_vis, (int(px), int(py)), 5, (0, 255, 0), -1)
+                if kp[2] > 0.5:
+                    cv2.circle(frame_vis, (int(kp[0]), int(kp[1])), 5, (0, 255, 0), -1)
 
-        # Save and display logic remains the same
+            # Extract coordinates (YOLO uses pixel units by default)
+            l_sh, r_sh = yolo_points[5][:2], yolo_points[6][:2]
+            l_hp, r_hp = yolo_points[11][:2], yolo_points[12][:2]
+
+            # Calculate mid-points for spine logic
+            m_sh = (l_sh + r_sh) / 2
+            m_hp = (l_hp + r_hp) / 2
+
+        # --- Universal Spine Calculation & Visualization ---
+        if m_sh is not None and m_hp is not None:
+            # Interpolate points between shoulder and hip mid-points to create the spine curve
+            s2 = (m_sh + m_hp) / 2
+            s1 = (m_sh + s2) / 2
+            s4 = (s2 + m_hp) / 2
+            s3 = (s2 + s4) / 2
+            s5 = (s4 + m_hp) / 2
+
+            spine_line_pts = [m_sh, s1, s2, s3, s4]
+            if self.spine_mode == 7:
+                spine_line_pts.append(s5)
+            spine_line_pts.append(m_hp)
+
+            # Draw spine lines (Red)
+            for i in range(len(spine_line_pts) - 1):
+                pt1 = tuple(spine_line_pts[i].astype(int))
+                pt2 = tuple(spine_line_pts[i + 1].astype(int))
+                cv2.line(frame_vis, pt1, pt2, (0, 0, 255), 2)
+
+            # # Draw spine keypoints (Yellow dots)
+            for pt in spine_line_pts:
+                px, py = int(pt[0]), int(pt[1])
+                cv2.circle(frame_vis, (px, py), 4, (0, 255, 255), -1)
+
+            # Add spine labels if enabled
+            if self.show_spine_labels.get():
+                spine_labels = ["MID_SH", "S1", "S2", "S3", "S4"]
+                if self.spine_mode == 7: spine_labels.append("S5")
+                spine_labels.append("MID_HIP")
+
+                for i, pt in enumerate(spine_line_pts):
+                    cv2.putText(frame_vis, spine_labels[i], (int(pt[0] + 8), int(pt[1] + 8)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
+
+        # --- Final View Processing and UI Update ---
+        # Save frame to disk for session replay
         path = f'./images/cam{cam_id}_frame{str(index).zfill(8)}.png'
         cv2.imwrite(path, frame_vis)
         self.frame_2d_paths[cam_id].append(path)
 
+        # Apply manual rotation if set by the user
         rot = self.view_rotations[cam_id]
         if rot == 1:
             frame_vis = cv2.rotate(frame_vis, cv2.ROTATE_90_CLOCKWISE)
