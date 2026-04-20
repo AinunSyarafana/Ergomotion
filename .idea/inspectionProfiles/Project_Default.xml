@@ -1,0 +1,62 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="mediapipe" />
+          <option value="ml_dtypes" />
+          <option value="numpy" />
+          <option value="protobuf" />
+          <option value="absl-py" />
+          <option value="attrs" />
+          <option value="certifi" />
+          <option value="cffi" />
+          <option value="charset-normalizer" />
+          <option value="contourpy" />
+          <option value="cycler" />
+          <option value="filelock" />
+          <option value="flatbuffers" />
+          <option value="fonttools" />
+          <option value="fsspec" />
+          <option value="idna" />
+          <option value="jax" />
+          <option value="jaxlib" />
+          <option value="Jinja2" />
+          <option value="kiwisolver" />
+          <option value="MarkupSafe" />
+          <option value="matplotlib" />
+          <option value="mpmath" />
+          <option value="networkx" />
+          <option value="opencv-contrib-python" />
+          <option value="opencv-python" />
+          <option value="opt_einsum" />
+          <option value="packaging" />
+          <option value="pandas" />
+          <option value="pillow" />
+          <option value="polars" />
+          <option value="polars-runtime-32" />
+          <option value="psutil" />
+          <option value="pycparser" />
+          <option value="pyparsing" />
+          <option value="python-dateutil" />
+          <option value="PyYAML" />
+          <option value="requests" />
+          <option value="scipy" />
+          <option value="setuptools" />
+          <option value="six" />
+          <option value="sounddevice" />
+          <option value="sympy" />
+          <option value="torch" />
+          <option value="torchvision" />
+          <option value="ttkbootstrap" />
+          <option value="typing_extensions" />
+          <option value="tzdata" />
+          <option value="ultralytics" />
+          <option value="ultralytics-thop" />
+          <option value="urllib3" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
