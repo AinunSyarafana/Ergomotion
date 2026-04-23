@@ -1,38 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="53593983-d3e4-4a07-9b76-594c70cc0dc2" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/00000000.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/00000001.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/00000002.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/00000003.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/00000004.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/00000005.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/00000006.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/00000007.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/00000008.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam0_frame00000000.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam0_frame00000001.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam0_frame00000002.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam0_frame00000003.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam0_frame00000004.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam0_frame00000005.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam0_frame00000006.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam0_frame00000007.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam0_frame00000008.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam1_frame00000000.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam1_frame00000001.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam1_frame00000002.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam1_frame00000003.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam1_frame00000004.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam1_frame00000005.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam1_frame00000006.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam1_frame00000007.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/cam1_frame00000008.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/kpts_3d.dat" beforeDir="false" afterPath="$PROJECT_DIR$/kpts_3d.dat" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-    </list>
+    <list default="true" id="53593983-d3e4-4a07-9b76-594c70cc0dc2" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -177,7 +146,7 @@
       <workItem from="1776239443959" duration="1294000" />
       <workItem from="1776650585384" duration="5967000" />
       <workItem from="1776656700032" duration="11659000" />
-      <workItem from="1776910349865" duration="3298000" />
+      <workItem from="1776910349865" duration="3873000" />
     </task>
     <servers />
   </component>
