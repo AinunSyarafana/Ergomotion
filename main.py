@@ -45,11 +45,6 @@ MP_POSE_NAMES = [
     "L_Heel", "R_Heel", "L_Foot_Index", "R_Foot_Index"
 ]
 
-MOVENET_TO_MP = {
-    0: 0, 5: 11, 6: 12, 7: 13, 8: 14, 9: 15, 10: 16,
-    11: 23, 12: 24, 13: 25, 14: 26, 15: 27, 16: 28
-}
-
 POSE_KEYPOINT_NAMES = [MP_POSE_NAMES[i] for i in pose_keypoints]
 
 # --- UI Helper Classes ---
@@ -156,10 +151,6 @@ class Application:
 
         # Spine mode
         self.spine_mode = 6 # Default
-
-        print("Loading MoveNet Thunder...")
-        self.movenet_model = hub.load("https://tfhub.dev/google/movenet/singlepose/thunder/4")
-        self.movenet_run = self.movenet_model.signatures['serving_default']
 
     # ---------------- UI Construction ----------------
 
@@ -731,57 +722,6 @@ class Application:
                     # Pass the original yolo_pts to the 2D display function for visualization
                     self.display_2d_frame(frames[i], None, label, index, cam_id, yolo_points=yolo_pts)
 
-                # Option 3: MoveNet Scanning
-                elif self.selected_ai == "MoveNet":
-                    frame_rgb = cv2.cvtColor(frames[i], cv2.COLOR_BGR2RGB)
-                    h, w, _ = frames[i].shape
-
-                    # 1. AI Detection
-                    input_tensor = tf.image.resize_with_pad(tf.expand_dims(frame_rgb, axis=0), 256, 256)
-                    input_tensor = tf.cast(input_tensor, dtype=tf.int32)
-                    outputs = self.movenet_run(input_tensor)
-                    mv_pts = outputs['output_0'].numpy()[0][0]  # Ini format 17 titik [y, x, conf]
-
-                    # 2. Sediakan format 33 titik untuk Sistem 3D & REBA
-                    mapped_pts = np.full((33, 2), -1.0)
-                    mv_map = {0: 0, 5: 11, 6: 12, 7: 13, 8: 14, 9: 15, 10: 16, 11: 23, 12: 24, 13: 25, 14: 26, 15: 27,
-                              16: 28}
-
-                    for mv_idx, mp_idx in mv_map.items():
-                        if mv_pts[mv_idx][2] > 0.25:
-                            mapped_pts[mp_idx] = [mv_pts[mv_idx][1] * w, mv_pts[mv_idx][0] * h]
-
-                    current_frame_2d_kpts.append(mapped_pts)
-
-                    # 3. MUNCULKAN TITIK (Guna koordinat 17 titik asal)
-                    # Kita tukar mv_pts (0-1) kepada pixel supaya fungsi display boleh lukis
-                    display_pts = []
-                    # Di dalam blok elif self.selected_ai == "MoveNet"
-                    for j in range(len(mv_pts)):
-                        y_raw = mv_pts[j][0]
-                        x_raw = mv_pts[j][1]
-                        conf = mv_pts[j][2]
-
-                        # --- LOGIK COORDINATE DISTORTION CORRECTION (Wajib!) ---
-                        # Ini untuk elakkan rangka nampak 'ramping' atau 'kaku'
-                        aspect_ratio = w / h
-                        if w > h:
-                            # Jika video Landscape (macam video awak), rangka akan mengembang ke kiri/kanan
-                            x_final = (x_raw - 0.5) * aspect_ratio + 0.5
-                            y_final = y_raw
-                        else:
-                            # Jika video Portrait, rangka akan mengembang ke atas/bawah
-                            x_final = x_raw
-                            y_final = (y_raw - 0.5) * aspect_ratio + 0.5
-
-                        # Darab dengan pixel sebenar
-                        px = x_final * w
-                        py = y_final * h
-                        display_pts.append([px, py, conf])
-
-                    # Hantar display_pts yang dah betul susunannya ke fungsi display
-                    self.display_2d_frame(frames[i], None, label, index, cam_id, yolo_points=display_pts)
-
             #If using YOLO, skip 3D calculation code below for now
             #if self.selected_ai == "YOLO":
             #    index += 1
@@ -816,9 +756,6 @@ class Application:
             # Index 11=L_Shoulder, 12=R_Shoulder | 23=L_Hip, 24=R_Hip
             if self.selected_ai == "YOLO":
                 sh_l, sh_r, hp_l, hp_r = 5, 6, 11, 12
-            elif self.selected_ai == "MoveNet":
-                # Gunakan index MediaPipe (11,12,23,24) sebab kita dah 'remap' MoveNet di bahagian atas
-                sh_l, sh_r, hp_l, hp_r = 11, 12, 23, 24
             else:  # MediaPipe
                 sh_l, sh_r, hp_l, hp_r = 11, 12, 23, 24
 
@@ -1100,36 +1037,6 @@ class Application:
             l_hp, r_hp = yolo_points[11][:2], yolo_points[12][:2]
 
             # Calculate mid-points for spine logic
-            m_sh = (l_sh + r_sh) / 2
-            m_hp = (l_hp + r_hp) / 2
-
-        # --- Option 3: MoveNet Visualization ---
-        elif self.selected_ai == "MoveNet" and yolo_points is not None:
-            # MoveNet guna COCO keypoints yang sama macam YOLO
-            movenet_skeleton = [
-                (0, 1), (0, 2), (1, 3), (2, 4), (5, 6), (5, 7), (7, 9), (6, 8),
-                (8, 10), (5, 11), (6, 12), (11, 12), (11, 13), (13, 15), (12, 14), (14, 16)
-            ]
-
-            # Lukis Skeleton MoveNet (Warna Kuning untuk beza dengan YOLO)
-            for p1, p2 in movenet_skeleton:
-                if yolo_points[p1][2] > 0.25 and yolo_points[p2][2] > 0.25:
-                    pt1 = (int(yolo_points[p1][0]), int(yolo_points[p1][1]))
-                    pt2 = (int(yolo_points[p2][0]), int(yolo_points[p2][1]))
-                    cv2.line(frame_vis, pt1, pt2, (0, 255, 255), 2)  # Kuning
-
-            # Lukis Titik MoveNet
-            for kp in yolo_points:
-                if kp[2] > 0.25:
-                    cv2.circle(frame_vis, (int(kp[0]), int(kp[1])), 5, (0, 0, 255), -1)  # Merah
-
-            # Ekstrak koordinat untuk pengiraan spine
-            l_sh = np.array(yolo_points[5][:2])
-            r_sh = np.array(yolo_points[6][:2])
-            l_hp = np.array(yolo_points[11][:2])
-            r_hp = np.array(yolo_points[12][:2])
-
-            # Sekarang pengiraan ini tidak akan error lagi
             m_sh = (l_sh + r_sh) / 2
             m_hp = (l_hp + r_hp) / 2
 
